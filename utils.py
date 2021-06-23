@@ -11,7 +11,7 @@ torch.set_default_tensor_type('torch.DoubleTensor')
 class Pendulum:
 
     def __init__(self, Wind, Noise, init_theta=0.0, init_dtheta=0.0, duration=20, Cd=0.3, \
-                 alpha=0.5, mode='baseline', eta1_base=0.01, eta2_base=0.01):
+                 alpha=0.5, mode='no-adapt', eta1_base=0.01, eta2_base=0.01):
         self.duration = duration
         
         # Pendulum parameters
@@ -80,7 +80,7 @@ class Pendulum:
         self.eta1_base = eta1_base
         self.eta2_base = eta2_base
     
-    # Ground truth damping function.
+    # Ground truth unknown dynamics model
     def F_d(self):
         # External wind velocity
         w_x = self.Wind_x
@@ -89,7 +89,7 @@ class Pendulum:
         v_y = self.l * self.dtheta * np.sin(self.theta)
         R = np.array([w_x - v_x, w_y - v_y])
         F = self.Cd * np.linalg.norm(R) * R
-        return -(self.l * np.sin(self.theta) * F[1] + self.l * np.cos(self.theta) * F[0]) \
+        return self.l * np.sin(self.theta) * F[1] + self.l * np.cos(self.theta) * F[0] \
                - self.alpha*self.dtheta
     
     def kernel(self):
@@ -104,7 +104,7 @@ class Pendulum:
     def F_hat(self):
         if self.mode == 'oracle':
             self.F_d_hat = self.F_d()
-        elif self.mode == 'baseline':
+        elif self.mode == 'no-adapt':
             self.F_d_hat = 0.0
         elif self.mode == 'adapt':
             self.F_d_hat = self.kernel()
@@ -115,7 +115,6 @@ class Pendulum:
         return self.F_d_hat
     
     def controller(self):
-        #(des_theta, des_dtheta, des_ddtheta) = self.desired_trajectory()
         u_feedback = self.m * self.l**2 * (-2 * self.gain * self.dtheta - self.gain**2 * self.theta)
         u_feedforward = -self.m * self.l * self.g_hat * np.sin(self.theta)
         u_residual = -self.F_hat()
@@ -189,7 +188,6 @@ class Pendulum:
         self.theta = self.state[0]
         
         # F_d measurement
-        # self.F_d_data = -self.u - self.m*self.g_hat*self.l*np.sin(self.theta) + self.m*self.l**2*(self.state[1]-prev_state[1])/self.step_size
         self.F_d_data = self.F_d_gt + self.a_noise
         if self.mode == 'adapt':
             self.adapt()
@@ -246,7 +244,7 @@ class Pendulum:
 class Pendulum_B(Pendulum):
 
     def __init__(self, Wind, Noise, init_theta=0.0, init_dtheta=0.0, duration=20, Cd=0.3, \
-                 alpha=0.5, mode='baseline', eta1_base=0.01, eta2_base=0.01):
+                 alpha=0.5, mode='no-adapt', eta1_base=0.01, eta2_base=0.01):
         self.duration = duration
         
         # Pendulum parameters
@@ -417,7 +415,7 @@ class Phi(nn.Module):
 class Pendulum_D(Pendulum_B):
 
     def __init__(self, Wind, Noise, init_theta=0.0, init_dtheta=0.0, duration=20, Cd=0.3, \
-                 alpha=0.5, mode='baseline', eta1_base=0.01, eta2_base=0.01):
+                 alpha=0.5, mode='no-adapt', eta1_base=0.01, eta2_base=0.01):
         self.duration = duration
         
         # Pendulum parameters
