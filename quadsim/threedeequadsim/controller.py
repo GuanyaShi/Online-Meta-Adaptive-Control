@@ -444,6 +444,9 @@ class MetaAdapt(Baseline):
         self.motor_speed_command = super().mixer(torque_sp, T_sp, logentry)
         return self.motor_speed_command
 
+    def get_features(self, X):
+        pass
+
     def get_f_hat(self, X):
         ''' Returns Force() named tuple with f_hat and, optionally, its derivatives '''
         raise NotImplementedError
@@ -461,12 +464,12 @@ class MetaAdapt(Baseline):
 class MetaAdaptBiconvex(MetaAdapt):
     _name = 'biconvex-omac'
     name_long = 'Biconvex OMAC'
-    def __init__(self, dim_a=100, dim_A=1000, eta_a_base=0.01, eta_A_base=0.01, *args, **kwargs):
+    def __init__(self, dim_a=100, dim_A=1000, eta_a_base=0.01, eta_A_base=0.01, feature_freq=1., *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Initialize kernels
         self.dim_a = dim_a
         self.dim_A = dim_A - dim_A%3
-        self.W = np.random.normal(size=(3, self.dim_A, 13))
+        self.W = np.random.normal(size=(3, self.dim_A, 13)) * feature_freq
         self.b = np.random.uniform(low=0, high=np.pi*2, size=(3, self.dim_A))
         # Make W and b block diagonal
         self.W = self.W * np.kron(np.eye(3), np.ones(int(self.dim_A/3)))[:,:,np.newaxis]
@@ -486,7 +489,7 @@ class MetaAdaptBiconvex(MetaAdapt):
     def reset_controller(self):
         super().reset_controller()
         self.A = np.random.normal(size=(self.dim_A, self.dim_a))
-        self.A /= np.linalg.norm(self.A, 2)
+        self.A /= np.sqrt(self.dim_A) # np.linalg.norm(self.A, 2) / self.dim_A
         self.a = np.zeros(self.dim_a)
         self.inner_adapt_count = 0
         self.meta_adapt_count = 0
@@ -526,18 +529,39 @@ class MetaAdaptBiconvex(MetaAdapt):
         self.meta_adapt_count = 0
 
 
+class MetaAdaptBaseline(MetaAdaptBiconvex):
+    _name = 'baseline-omac'
+    name_long = 'Baseline OMAC'
+    def __init__(self, dim_a=100, *args, **kwargs):
+        super().__init__(eta_A_base=0.0, *args, **kwargs)
+
+# class MetaAdaptBaseline(MetaAdaptBiconvex):
+#     _name = 'baseline-omac'
+#     name_long = 'Baseline OMAC'
+#     def __init__(self, dim_a=100, *args, **kwargs):
+#         super().__init__(eta_A_base=0.0, dim_A = dim_a, *args, **kwargs)
+
+#     def reset_controller(self):
+#         super().reset_controller()
+#         self.A = np.eye(self.dim_a)
+#         self.a = np.zeros(self.dim_a)
+#         self.inner_adapt_count = 0
+#         self.meta_adapt_count = 0
+
+#         self.reset_batch()
+
 
 class MetaAdaptConvex(MetaAdapt):
     _name = 'convex-omac'
     name_long = 'Convex OMAC'
-    def __init__(self, dim_a=100, dim_A=100, eta_a_base=0.001, eta_A_base=0.001, *args, **kwargs):
+    def __init__(self, dim_a=100, dim_A=100, eta_a_base=0.001, eta_A_base=0.001, feature_freq=1., *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Initialize kernels
         self.dim_a = dim_a - dim_a%3
         self.dim_A = dim_A - dim_A%3
-        self.W_a = np.random.normal(size=(3, self.dim_a, 13))
+        self.W_a = np.random.normal(size=(3, self.dim_a, 13)) * feature_freq
         self.b_a = np.random.uniform(low=0, high=np.pi*2, size=(3, self.dim_a))
-        self.W_A = np.random.normal(size=(3, self.dim_A, 13))
+        self.W_A = np.random.normal(size=(3, self.dim_A, 13)) * feature_freq
         self.b_A = np.random.uniform(low=0, high=np.pi*2, size=(3, self.dim_A))
         # Make W and b block diagonal
         self.W_a = self.W_a * np.kron(np.eye(3), np.ones(int(self.dim_a/3)))[:,:,np.newaxis]
@@ -603,11 +627,11 @@ class MetaAdaptDeep(MetaAdapt):
 
     class Phi(nn.Module):
 
-        def __init__(self, dim_kernel):
+        def __init__(self, dim_kernel, layer_sizes):
             super().__init__()
-            self.fc1 = spectral_norm(nn.Linear(13, 25))
-            self.fc2 = spectral_norm(nn.Linear(25, 30))
-            self.fc3 = spectral_norm(nn.Linear(30, dim_kernel))
+            self.fc1 = spectral_norm(nn.Linear(13, layer_sizes[0]))
+            self.fc2 = spectral_norm(nn.Linear(layer_sizes[0], layer_sizes[1]))
+            self.fc3 = spectral_norm(nn.Linear(layer_sizes[1], dim_kernel))
 
         def forward(self, x):
             x = F.relu(self.fc1(x))
@@ -616,7 +640,7 @@ class MetaAdaptDeep(MetaAdapt):
 
             return x
 
-    def __init__(self, dim_a=100, eta_a_base=0.001, eta_A_base=0.001, *args, **kwargs):
+    def __init__(self, dim_a=100, eta_a_base=0.001, eta_A_base=0.001, layer_sizes=(25, 30), *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Initialize kernels
         self.dim_a = dim_a - dim_a % 3
@@ -624,6 +648,7 @@ class MetaAdaptDeep(MetaAdapt):
         self.a : np.ndarray= None
         self.optimizer : optim.Adam = None
         self.loss = nn.MSELoss()
+        self.layer_sizes = layer_sizes
 
         # Initialize parameters
         self.eta_a_base = eta_a_base
@@ -632,7 +657,7 @@ class MetaAdaptDeep(MetaAdapt):
     def reset_controller(self):
         super().reset_controller()
         self.a = np.zeros(self.dim_a)
-        self.phi = self.Phi(int(self.dim_a / 3))
+        self.phi = self.Phi(dim_kernel=int(self.dim_a / 3), layer_sizes=self.layer_sizes)
         self.optimizer = optim.Adam(self.phi.parameters(), lr=self.eta_A_base)
         self.inner_adapt_count = 0
         self.meta_adapt_count = 0
@@ -679,21 +704,14 @@ class MetaAdaptDeep(MetaAdapt):
 
         self.reset_batch()
         self.meta_adapt_count = 0
-
-        
-class MetaAdaptBaseline(MetaAdaptBiconvex):
-    _name = 'baseline-omac'
-    name_long = ['Baseline OMAC']
-    def __init__(self, *args, **kwargs):
-        super().__init__(eta_A_base=0.0, *args, **kwargs)
         
         
 class Omniscient(Baseline):
     _name = 'omniscient'
     name_long = 'Omniscient Control'
-    def __init__(self, *args, baselinectrlparamfile='params-baseline.json', **kwargs):
+    def __init__(self, *args, **kwargs):
         # print(args, kwargs)
-        super().__init__(ctrlparamfile=baselinectrlparamfile, integral_control=False, *args, **kwargs)
+        super().__init__(integral_control=False, *args, **kwargs)
         self.f_hat_m1 = np.zeros(3)
         self.f_hat_dot_filtered = np.zeros(3)
 

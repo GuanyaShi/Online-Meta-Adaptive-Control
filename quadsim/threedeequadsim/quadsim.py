@@ -221,10 +221,16 @@ class Quadrotor():
                 t_readout += self.params['dt_readout']
 
     def run(self, controller, trajectory=fig8, show_progress=True, seed=None):
+        # Set the seed that is used to initialize the controller
         if type(seed) is not None:
             random.seed(seed)
             np.random.seed(seed)
         controller.reset_controller()
+
+        # Reset the seed before running experiments
+        if type(seed) is not None:
+            random.seed(seed)
+            np.random.seed(seed)
         # # Use zip to switch output array from indexing of time, (X, t, log), to indexing of (X, t, log), time
         # log = zip(*self.runiter(trajectory=trajectory, controller=controller))
         if show_progress:
@@ -242,7 +248,8 @@ class Quadrotor():
         # return Data(log2, metadata)
 
 class QuadrotorWithSideForce(Quadrotor):
-    def __init__(self, *args, sideforcemodel='force and torque', Vwind=0., Vwind_cov=0., Vwind_gust=0., wind_constraint=None, **kwargs):
+    def __init__(self, *args, sideforcemodel='force and torque', Vwind=0., Vwind_cov=0., Vwind_gust=0., 
+                 wind_model='random-walk', wind_constraint=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.sideforcemodel = sideforcemodel
         self.t_wind_update = np.nan
@@ -285,6 +292,7 @@ class QuadrotorWithSideForce(Quadrotor):
         else:
             raise ValueError("Unknown wind speed constraint")
         self.wind_constraint = wind_constraint
+        self.wind_model = wind_model
 
         l_arm = self.params['l_arm']
         h = self.params['h']
@@ -295,25 +303,34 @@ class QuadrotorWithSideForce(Quadrotor):
 
         # self.metadata['dynamics_model'] = 'wind side-force, ' + sideforcemodel 
 
-        self.t_last_wind_update = 0.
+        self.t_last_wind_update = - self.params['wind_update_period']
 
     def get_wind_velocity(self, t):
         dt = (t - self.t_last_wind_update)
-        if dt > self.params['wind_update_period']:
-            self.Vwind += np.random.multivariate_normal(mean = np.zeros(3), cov = (self.Vwind_cov * dt))
+        if self.wind_model == 'random-walk':
+            if dt > self.params['wind_update_period']:
+                self.Vwind += np.random.multivariate_normal(mean = np.zeros(3), cov = (self.Vwind_cov * dt))
 
-            if self.wind_constraint is None:
-                pass
+                if self.wind_constraint is None:
+                    pass
 
-            elif self.wind_constraint == 'soft':
-                self.Vwind -= self.Vwind_damping * (self.Vwind - self.Vwind_mean) * dt
+                elif self.wind_constraint == 'soft':
+                    self.Vwind -= self.Vwind_damping * (self.Vwind - self.Vwind_mean) * dt
 
-            elif self.wind_constraint == 'hard':
-                Vwind_diff = self.Vwind - self.Vwind_mean
-                if np.linalg.norm(Vwind_diff) > self.Vwind_gust:
-                    self.Vwind = self.Vwind_mean +  Vwind_diff * self.Vwind_gust / np.linalg.norm(Vwind_diff)
+                elif self.wind_constraint == 'hard':
+                    Vwind_diff = self.Vwind - self.Vwind_mean
+                    if np.linalg.norm(Vwind_diff) > self.Vwind_gust:
+                        self.Vwind = self.Vwind_mean +  Vwind_diff * self.Vwind_gust / np.linalg.norm(Vwind_diff)
 
-            self.t_last_wind_update = t
+                self.t_last_wind_update = t
+        elif self.wind_model == 'iid':
+            if dt > self.params['wind_update_period']:
+                self.Vwind = np.random.multivariate_normal(mean = self.Vwind_mean, cov = (self.Vwind_cov * dt))
+                if self.wind_constraint == 'hard':
+                    Vwind_diff = self.Vwind - self.Vwind_mean
+                    if np.linalg.norm(Vwind_diff) > self.Vwind_gust:
+                        self.Vwind = self.Vwind_mean +  Vwind_diff * self.Vwind_gust / np.linalg.norm(Vwind_diff)
+                self.t_last_wind_update = t
 
         return self.Vwind # + 2 * np.array((np.sign(np.sin(1/3 * t)), 0., 0.))
         # if t != self.t_wind_update:
