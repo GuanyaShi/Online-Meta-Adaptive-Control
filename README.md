@@ -6,4 +6,4 @@ Please run `experiments.ipynb`, where we provide several instantiations of OMAC 
 
 Paper link: https://arxiv.org/abs/2106.06098
 
-Author = {Guanya Shi, Kamyar Azizzadenesheli, Soon-Jo Chung, Yisong Yue}
+Author = {Guanya Shi, Kamyar Azizzadenesheli, Michael O'Connell, Soon-Jo Chung, Yisong Yue}
