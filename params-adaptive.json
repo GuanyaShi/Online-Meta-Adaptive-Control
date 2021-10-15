@@ -1,7 +1,0 @@
-{
-    "Vinv": 1.0,
-    "W": 0.1,
-    "adaptation_gain_regularization": 0.01,
-    "tracking_err_gain": 1.0,
-    "P0": 1.0
-}

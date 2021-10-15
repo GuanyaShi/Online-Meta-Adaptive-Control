@@ -1,5 +1,0 @@
-{
-    "thrust_delay": 0.045,
-    "attitude_delay": 0.25,
-    "force_filter_time_const": 0.1
-}
