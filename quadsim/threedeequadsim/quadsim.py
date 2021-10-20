@@ -249,7 +249,7 @@ class Quadrotor():
 
 class QuadrotorWithSideForce(Quadrotor):
     def __init__(self, *args, sideforcemodel='force and torque', Vwind=0., Vwind_cov=0., Vwind_gust=0., 
-                 wind_model='random-walk', wind_constraint=None, **kwargs):
+                 wind_model='random-walk', wind_constraint='hard', **kwargs):
         super().__init__(*args, **kwargs)
         self.sideforcemodel = sideforcemodel
         self.t_wind_update = np.nan
@@ -277,20 +277,27 @@ class QuadrotorWithSideForce(Quadrotor):
 
         self.Vwind_cov = Vwind_cov
 
-        assert(type(Vwind_gust) == float)
-        if wind_constraint == 'soft':
-            # Vwind_gust is sqrt(E[|Vwind - Vwind0|^2])
-            Vwind_damping = np.trace(Vwind_cov) / (Vwind_gust/1.25)**2 # divide gust by value tuned to give similar mean wind difference for soft and hard constraints
-            if Vwind_damping * self.params['dt'] > 1: # for convergence of discrete wind speed update, 0 < Vwind_damping * dt < 2
-                warn('Vwind_cov too high, Vwind_gust not used')
-                Vwind_damping = 1 / self.params['dt']
-            self.Vwind_damping = Vwind_damping
-        elif wind_constraint == 'hard':
+        if wind_model == 'random-walk':
+            assert(type(Vwind_gust) == float)
+            if wind_constraint == 'soft':
+                # Vwind_gust is sqrt(E[|Vwind - Vwind0|^2])
+                Vwind_damping = np.trace(Vwind_cov) / (Vwind_gust/1.25)**2 # divide gust by value tuned to give similar mean wind difference for soft and hard constraints
+                if Vwind_damping * self.params['dt'] > 1: # for convergence of discrete wind speed update, 0 < Vwind_damping * dt < 2
+                    warn('Vwind_cov too high, Vwind_gust not used')
+                    Vwind_damping = 1 / self.params['dt']
+                self.Vwind_damping = Vwind_damping
+            elif wind_constraint == 'hard':
+                self.Vwind_gust = Vwind_gust
+            elif wind_constraint is None:
+                pass
+            else:
+                raise ValueError("Unknown wind speed constraint")
+        if wind_model == 'iid-uniform':
+            if wind_constraint == 'soft':
+                warn('soft wind speed constraint not used for iid wind model')
+            elif np.linalg.norm(self.Vwind_cov) != 0:
+                warn('Vwind_cov not used for "iid-uniform" wind model')
             self.Vwind_gust = Vwind_gust
-        elif wind_constraint is None:
-            pass
-        else:
-            raise ValueError("Unknown wind speed constraint")
         self.wind_constraint = wind_constraint
         self.wind_model = wind_model
 
@@ -323,14 +330,20 @@ class QuadrotorWithSideForce(Quadrotor):
                         self.Vwind = self.Vwind_mean +  Vwind_diff * self.Vwind_gust / np.linalg.norm(Vwind_diff)
 
                 self.t_last_wind_update = t
-        elif self.wind_model == 'iid':
+        elif self.wind_model == 'iid-uniform':
             if dt > self.params['wind_update_period']:
-                self.Vwind = np.random.multivariate_normal(mean = self.Vwind_mean, cov = (self.Vwind_cov * dt))
-                if self.wind_constraint == 'hard':
-                    Vwind_diff = self.Vwind - self.Vwind_mean
-                    if np.linalg.norm(Vwind_diff) > self.Vwind_gust:
-                        self.Vwind = self.Vwind_mean +  Vwind_diff * self.Vwind_gust / np.linalg.norm(Vwind_diff)
+                # self.Vwind = np.random.multivariate_normal(mean = self.Vwind_mean, cov = (self.Vwind_cov * dt))
+                self.Vwind = np.random.uniform(low=self.Vwind_mean - self.Vwind_gust,
+                                               high=self.Vwind_mean + self.Vwind_gust)
+                # if self.wind_constraint == 'hard':
+                #     Vwind_diff = self.Vwind - self.Vwind_mean
+                #     if np.linalg.norm(Vwind_diff) > self.Vwind_gust:
+                #         self.Vwind = self.Vwind_mean +  Vwind_diff * self.Vwind_gust / np.linalg.norm(Vwind_diff)
                 self.t_last_wind_update = t
+        elif self.wind_model == None:
+            pass
+        else: 
+            raise NotImplementedError
 
         return self.Vwind # + 2 * np.array((np.sign(np.sin(1/3 * t)), 0., 0.))
         # if t != self.t_wind_update:
