@@ -489,7 +489,8 @@ class MetaAdaptBiconvex(MetaAdapt):
     def reset_controller(self):
         super().reset_controller()
         self.A = np.random.normal(size=(self.dim_A, self.dim_a))
-        self.A /= np.sqrt(self.dim_A) # np.linalg.norm(self.A, 2) / self.dim_A
+        # self.A /= np.sqrt(self.dim_A) # np.linalg.norm(self.A, 2) / self.dim_A
+        self.A /= np.linalg.norm(self.A, 2)
         self.a = np.zeros(self.dim_a)
         self.inner_adapt_count = 0
         self.meta_adapt_count = 0
@@ -532,23 +533,21 @@ class MetaAdaptBiconvex(MetaAdapt):
 class MetaAdaptBaseline(MetaAdaptBiconvex):
     _name = 'baseline-omac'
     name_long = 'Baseline OMAC'
-    def __init__(self, dim_a=100, *args, **kwargs):
-        super().__init__(eta_A_base=0.0, *args, **kwargs)
+    def __init__(self, dim_a=100, A_type='eye', *args, **kwargs):
+        if A_type == 'eye':
+            dim_a = dim_a - (dim_a % 3)
+            super().__init__(eta_A_base=0.0, dim_A = dim_a, dim_a = dim_a, *args, **kwargs)
+        elif A_type == 'random':
+            super().__init__(eta_A_base=0.0, dim_A = dim_a, dim_a = dim_a, *args, **kwargs)
+        else: 
+            raise NotImplementedError
+        self.A_type = A_type
 
-# class MetaAdaptBaseline(MetaAdaptBiconvex):
-#     _name = 'baseline-omac'
-#     name_long = 'Baseline OMAC'
-#     def __init__(self, dim_a=100, *args, **kwargs):
-#         super().__init__(eta_A_base=0.0, dim_A = dim_a, *args, **kwargs)
 
-#     def reset_controller(self):
-#         super().reset_controller()
-#         self.A = np.eye(self.dim_a)
-#         self.a = np.zeros(self.dim_a)
-#         self.inner_adapt_count = 0
-#         self.meta_adapt_count = 0
-
-#         self.reset_batch()
+    def reset_controller(self):
+        super().reset_controller()
+        if self.A_type == 'eye':
+            self.A = np.eye(self.dim_a)
 
 
 class MetaAdaptConvex(MetaAdapt):
