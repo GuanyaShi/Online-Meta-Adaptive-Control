@@ -1,6 +1,6 @@
 {
-    "MC_ROLL_P": 5.0,
-    "MC_PITCH_P": 5.0,
+    "MC_ROLL_P": 15.0,
+    "MC_PITCH_P": 15.0,
     "MC_YAW_P": 1.0,
     "MC_ROLLRATE_P": 0.4,
     "MC_PITCHRATE_P": 0.4,

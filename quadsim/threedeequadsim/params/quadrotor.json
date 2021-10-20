@@ -28,15 +28,15 @@
             0.0036002499999999997
         ]
     ],
-    "w_m": 50.0,
+    "w_m": 500.0,
     "motor_max_speed": 1000.0,
     "motor_min_speed": 0.0,
     "t_start": 0.0,
     "t_stop": 60,
     "dt": 0.001,
     "dt_posctrl": 0.02,
-    "dt_attctrl": 0.004,
-    "dt_angratectrl": 0.0025,
+    "dt_attctrl": 0.001,
+    "dt_angratectrl": 0.001,
     "dt_readout": 0.01,
     "Q": 0.01,
     "wind_update_period": 2.0,
