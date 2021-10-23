@@ -134,8 +134,8 @@ def save(data, options, testname=None):
         json.dump(options, f, indent=4)
 
     for indexes, log  in np.ndenumerate(data):
-        subfolder = folder + log.name + '/'
-        print('  saving ' + log.name + ' to folder ' + subfolder)
+        subfolder = folder + log['name'] + '/'
+        print('  saving ' + log['name'] + ' to folder ' + subfolder)
 
         os.makedirs(subfolder)
 
