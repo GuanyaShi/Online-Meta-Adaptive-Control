@@ -33,6 +33,7 @@ def ignore(*args, **kwargs):
     pass
 
 class Controller():
+    ''' Controller class implements the attitude controller and thrust mixing. The position controller is not implemented and should be implemented in child classes.'''
     _name = None
     name_long = None
     def __init__(self, quadparamfile=DEFAULT_QUAD_PARAMETER_FILE, px4paramfile=DEFAULT_PX4_PARAM_FILE):
@@ -179,8 +180,8 @@ class Controller():
 
 class Baseline(Controller):
     ''' Baseline controller class with PID feedback and acceleration feedforward term and with exact quadrotor dynamic model'''
-    _name = 'baseline'
-    name_long = 'Baseline Control'
+    _name = 'pid'
+    name_long = 'PID'
     def __init__(self, ctrlparamfile=DEFAULT_CONTROL_PARAM_FILE, quadparamfile=DEFAULT_QUAD_PARAMETER_FILE, integral_control=True, **kwargs):
         super().__init__(quadparamfile=quadparamfile, **kwargs)
         self.params = readparamfile(filename=ctrlparamfile, params=self.params)
@@ -191,15 +192,8 @@ class Baseline(Controller):
                            self.params['C_q'] * np.array([-1., 1., -1., 1.])])
         self.Binv = np.linalg.inv(self.B)
 
-        self.p_error = np.zeros(3)
-        self.v_error = np.zeros(3)
-        self.int_error = np.zeros(3)
         if not integral_control:
             self.params['K_i'] = np.zeros((3, 3))
-
-        self.F_r_last = None
-
-        self.t_last_wind_update = None
 
     def calculate_gains(self):
         self.params['K_p'] = np.diag([self.params['Lam_xy']*self.params['K_xy'],
@@ -214,6 +208,10 @@ class Baseline(Controller):
         self.F_r_dot = None
         self.F_r_last = None
         self.t_last = None
+        self.t_last_wind_update = None
+        self.p_error = np.zeros(3)
+        self.v_error = np.zeros(3)
+        self.int_error = np.zeros(3)
         self.dt = 0.
         self.dt_inv = 0.
 
@@ -463,13 +461,25 @@ class MetaAdapt(Baseline):
 
 class MetaAdaptBiconvex(MetaAdapt):
     _name = 'biconvex-omac'
-    name_long = 'Biconvex OMAC'
+    name_long = 'OMAC (bi-convex)'
     def __init__(self, dim_a=100, dim_A=1000, eta_a_base=0.01, eta_A_base=0.01, feature_freq=1., *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Initialize kernels
+        self.feature_freq = feature_freq
         self.dim_a = dim_a
         self.dim_A = dim_A - dim_A%3
-        self.W = np.random.normal(size=(3, self.dim_A, 13)) * feature_freq
+        self.A = None
+        self.a = None
+        self.W = None
+        self.b = None
+
+        # Initialize parameters
+        self.eta_a_base = eta_a_base
+        self.eta_A_base = eta_A_base
+
+    def reset_controller(self):
+        super().reset_controller()
+        # Set W and b matrices
+        self.W = np.random.normal(size=(3, self.dim_A, 13)) * self.feature_freq
         self.b = np.random.uniform(low=0, high=np.pi*2, size=(3, self.dim_A))
         # Make W and b block diagonal
         self.W = self.W * np.kron(np.eye(3), np.ones(int(self.dim_A/3)))[:,:,np.newaxis]
@@ -479,19 +489,14 @@ class MetaAdaptBiconvex(MetaAdapt):
         # self.W = np.kron(np.eye(3), _W)
         # _b = np.random.uniform(low=0, high=np.pi*2, size=int(self.dim_A/3))
         # self.b = np.kron(np.eye(3), _b)
-        self.A = None
-        self.a = None
 
-        # Initialize parameters
-        self.eta_a_base = eta_a_base
-        self.eta_A_base = eta_A_base
-
-    def reset_controller(self):
-        super().reset_controller()
+        # Initialize learned parameter matrices
         self.A = np.random.normal(size=(self.dim_A, self.dim_a))
         # self.A /= np.sqrt(self.dim_A) # np.linalg.norm(self.A, 2) / self.dim_A
         self.A /= np.linalg.norm(self.A, 2)
         self.a = np.zeros(self.dim_a)
+
+        # Initialize counters
         self.inner_adapt_count = 0
         self.meta_adapt_count = 0
 
@@ -532,7 +537,7 @@ class MetaAdaptBiconvex(MetaAdapt):
 
 class MetaAdaptBaseline(MetaAdaptBiconvex):
     _name = 'baseline-omac'
-    name_long = 'Baseline OMAC'
+    name_long = 'Baseline'
     def __init__(self, dim_a=100, A_type='eye', *args, **kwargs):
         if A_type == 'eye':
             dim_a = dim_a - (dim_a % 3)
@@ -552,21 +557,18 @@ class MetaAdaptBaseline(MetaAdaptBiconvex):
 
 class MetaAdaptConvex(MetaAdapt):
     _name = 'convex-omac'
-    name_long = 'Convex OMAC'
+    name_long = 'OMAC (convex)'
     def __init__(self, dim_a=100, dim_A=100, eta_a_base=0.001, eta_A_base=0.001, feature_freq=1., *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Initialize kernels
+        self.feature_freq = feature_freq
         self.dim_a = dim_a - dim_a%3
         self.dim_A = dim_A - dim_A%3
-        self.W_a = np.random.normal(size=(3, self.dim_a, 13)) * feature_freq
-        self.b_a = np.random.uniform(low=0, high=np.pi*2, size=(3, self.dim_a))
-        self.W_A = np.random.normal(size=(3, self.dim_A, 13)) * feature_freq
-        self.b_A = np.random.uniform(low=0, high=np.pi*2, size=(3, self.dim_A))
-        # Make W and b block diagonal
-        self.W_a = self.W_a * np.kron(np.eye(3), np.ones(int(self.dim_a/3)))[:,:,np.newaxis]
-        self.b_a = self.b_a * np.kron(np.eye(3), np.ones(int(self.dim_a/3)))
-        self.W_A = self.W_A * np.kron(np.eye(3), np.ones(int(self.dim_A/3)))[:,:,np.newaxis]
-        self.b_A = self.b_A * np.kron(np.eye(3), np.ones(int(self.dim_A/3)))
+
+        # Create variables for kernels and parameters
+        self.W_a = None
+        self.W_A = None
+        self.b_a = None
+        self.b_A = None
         self.A = None
         self.a = None
 
@@ -576,8 +578,22 @@ class MetaAdaptConvex(MetaAdapt):
 
     def reset_controller(self):
         super().reset_controller()
+        # Set W and b matrices
+        self.W_a = np.random.normal(size=(3, self.dim_a, 13)) * self.feature_freq
+        self.b_a = np.random.uniform(low=0, high=np.pi*2, size=(3, self.dim_a))
+        self.W_A = np.random.normal(size=(3, self.dim_A, 13)) * self.feature_freq
+        self.b_A = np.random.uniform(low=0, high=np.pi*2, size=(3, self.dim_A))
+        # Make W and b block diagonal
+        self.W_a = self.W_a * np.kron(np.eye(3), np.ones(int(self.dim_a/3)))[:,:,np.newaxis]
+        self.b_a = self.b_a * np.kron(np.eye(3), np.ones(int(self.dim_a/3)))
+        self.W_A = self.W_A * np.kron(np.eye(3), np.ones(int(self.dim_A/3)))[:,:,np.newaxis]
+        self.b_A = self.b_A * np.kron(np.eye(3), np.ones(int(self.dim_A/3)))
+
+        # Initialize learned parameter matrices
         self.A = np.zeros(self.dim_A)
         self.a = np.zeros(self.dim_a)
+
+        # Set counters
         self.inner_adapt_count = 0
         self.meta_adapt_count = 0
 
@@ -622,7 +638,7 @@ class MetaAdaptConvex(MetaAdapt):
 
 class MetaAdaptDeep(MetaAdapt):
     _name = 'deep-omac'
-    name_long = 'Deep OMAC'
+    name_long = 'OMAC (deep)'
 
     class Phi(nn.Module):
 
@@ -707,12 +723,16 @@ class MetaAdaptDeep(MetaAdapt):
         
 class Omniscient(Baseline):
     _name = 'omniscient'
-    name_long = 'Omniscient Control'
+    name_long = 'Omniscient'
     def __init__(self, *args, **kwargs):
         # print(args, kwargs)
         super().__init__(integral_control=False, *args, **kwargs)
         self.f_hat_m1 = np.zeros(3)
         self.f_hat_dot_filtered = np.zeros(3)
+
+    def reset_controller(self):
+        self._first_call = True
+        return super().reset_controller()
 
     def get_Fr(self, X, imu=np.zeros(3), pd=np.zeros(2), vd=np.zeros(2), ad=np.zeros(3), logentry=None, **kwargs):
         # Get baseline controller force (without integral control)
@@ -723,7 +743,10 @@ class Omniscient(Baseline):
         try:
             f_hat = logentry['Fs']
         except KeyError as err:
-            warn(str(err))
+            if self._first_call:
+                self._first_call = False
+            else:
+                warn(str(err))
             f_hat = np.zeros(3)
 
         lam = np.exp(- self.dt / self.params['force_filter_time_const'])
