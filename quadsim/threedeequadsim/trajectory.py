@@ -1,9 +1,19 @@
 # import numpy as np
 # from autograd import jacobian
-from autograd import numpy as np
+# from autograd import numpy as np
+import numpy as np
 import random
 
 from torch import dist
+
+
+__author__ = "Michael O'Connell"
+__date__ = "Octoboer 2021"
+__copyright__ = "Copyright 2021 by Michael O'Connell"
+__credits__ = ["Michael O'Connell", "Guanya Shi"]
+__maintainer__ = "Michael O'Connell"
+__email__ = "moc@caltech.edu"
+__status__ = "Prototype"
 
 class Trajectory():
     _name = None

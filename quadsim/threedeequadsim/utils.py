@@ -4,8 +4,14 @@ import json
 import numpy as np
 import rowan
 
+
 __author__ = "Michael O'Connell"
 __date__ = "Octoboer 2021"
+__copyright__ = "Copyright 2021 by Michael O'Connell"
+__credits__ = ["Michael O'Connell", "Guanya Shi"]
+__maintainer__ = "Michael O'Connell"
+__email__ = "moc@caltech.edu"
+__status__ = "Prototype"
 
 
 class dotdict(dict):

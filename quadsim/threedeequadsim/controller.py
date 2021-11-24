@@ -19,6 +19,11 @@ from .utils import readparamfile
 
 __author__ = "Michael O'Connell"
 __date__ = "Octoboer 2021"
+__copyright__ = "Copyright 2021 by Michael O'Connell"
+__credits__ = ["Michael O'Connell", "Guanya Shi", "Kamyar Azizzadenesheli", "Soon-Jo Chung", "Yisong Yue"]
+__maintainer__ = "Michael O'Connell"
+__email__ = "moc@caltech.edu"
+__status__ = "Prototype"
 
 
 DEFAULT_CONTROL_PARAM_FILE = pkg_resources.resource_filename(__name__, 'params/controller.json')
@@ -134,7 +139,6 @@ class Controller():
         # torque_sp = self.px4_params['J'] @ alpha_sp
         torque_sp = alpha_sp
 
-        logentry['w_sp'] = w_sp
         logentry['w'] = w
         logentry['w_error_integral'] = self.w_error_integral
         logentry['w_filtered'] = self.w_filtered
@@ -185,21 +189,22 @@ class Baseline(Controller):
     def __init__(self, ctrlparamfile=DEFAULT_CONTROL_PARAM_FILE, quadparamfile=DEFAULT_QUAD_PARAMETER_FILE, integral_control=True, **kwargs):
         super().__init__(quadparamfile=quadparamfile, **kwargs)
         self.params = readparamfile(filename=ctrlparamfile, params=self.params)
-        self.params['K_i'] = np.array(self.params['K_i'])
-        self.B = np.array([self.params['C_T'] * np.ones(4), 
-                           self.params['C_T'] * self.params['l_arm'] * np.array([-1., -1., 1., 1.]),
-                           self.params['C_T'] * self.params['l_arm'] * np.array([-1., 1., 1., -1.]),
-                           self.params['C_q'] * np.array([-1., 1., -1., 1.])])
-        self.Binv = np.linalg.inv(self.B)
-
-        if not integral_control:
-            self.params['K_i'] = np.zeros((3, 3))
+        self.integral_control = integral_control
 
     def calculate_gains(self):
+        self.params['K_i'] = np.array(self.params['K_i'])
+
+        if not self.integral_control:
+            self.params['K_i'] = np.zeros((3, 3))
         self.params['K_p'] = np.diag([self.params['Lam_xy']*self.params['K_xy'],
                        self.params['Lam_xy']*self.params['K_xy'],
                        self.params['Lam_z']*self.params['K_z']])
         self.params['K_d'] = np.diag([self.params['K_xy'], self.params['K_xy'], self.params['K_z']])
+        self.B = np.array([self.params['C_T'] * np.ones(4), 
+                           self.params['C_T'] * self.params['l_arm'] * np.array([-1., -1., 1., 1.]),
+                           self.params['C_T'] * self.params['l_arm'] * np.array([-1., 1., 1., -1.]),
+                           self.params['C_q'] * np.array([-1., 1., -1., 1.])])
+        # self.Binv = np.linalg.inv(self.B)
 
 
     def reset_controller(self):
@@ -476,6 +481,8 @@ class MetaAdaptBiconvex(MetaAdapt):
         self.eta_a_base = eta_a_base
         self.eta_A_base = eta_A_base
 
+        print('Initializing %s with dim_a=%d, dim_A=%d' % (self._name, self.dim_a, self.dim_A))
+
     def reset_controller(self):
         super().reset_controller()
         # Set W and b matrices
@@ -538,12 +545,12 @@ class MetaAdaptBiconvex(MetaAdapt):
 class MetaAdaptBaseline(MetaAdaptBiconvex):
     _name = 'baseline-omac'
     name_long = 'Baseline'
-    def __init__(self, dim_a=100, A_type='eye', *args, **kwargs):
+    def __init__(self, dim_a=100, dim_A=150, A_type='eye', *args, **kwargs):
         if A_type == 'eye':
             dim_a = dim_a - (dim_a % 3)
             super().__init__(eta_A_base=0.0, dim_A = dim_a, dim_a = dim_a, *args, **kwargs)
         elif A_type == 'random':
-            super().__init__(eta_A_base=0.0, dim_A = dim_a, dim_a = dim_a, *args, **kwargs)
+            super().__init__(eta_A_base=0.0, dim_A = dim_A, dim_a = dim_a, *args, **kwargs)
         else: 
             raise NotImplementedError
         self.A_type = A_type
@@ -553,12 +560,13 @@ class MetaAdaptBaseline(MetaAdaptBiconvex):
         super().reset_controller()
         if self.A_type == 'eye':
             self.A = np.eye(self.dim_a)
+        # print(self.A.shape)
 
 
 class MetaAdaptConvex(MetaAdapt):
     _name = 'convex-omac'
     name_long = 'OMAC (convex)'
-    def __init__(self, dim_a=100, dim_A=100, eta_a_base=0.001, eta_A_base=0.001, feature_freq=1., *args, **kwargs):
+    def __init__(self, dim_a=100, dim_A=100, eta_a_base=0.001, eta_A_base=0.001, eta_A_threshold=1.0, feature_freq=1., *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.feature_freq = feature_freq
         self.dim_a = dim_a - dim_a%3
@@ -574,7 +582,10 @@ class MetaAdaptConvex(MetaAdapt):
 
         # Initialize parameters
         self.eta_a_base = eta_a_base
+        self.eta_A_threshold = eta_A_threshold
         self.eta_A_base = eta_A_base
+
+        print('Initializing %s with dim_a=%d, dim_A=%d' % (self._name, self.dim_a, self.dim_A))
 
     def reset_controller(self):
         super().reset_controller()
@@ -624,7 +635,9 @@ class MetaAdaptConvex(MetaAdapt):
     def meta_adapt(self):
         self.inner_adapt_count = 0
         self.meta_adapt_count += 1
-        eta_A = self.eta_A_base / np.sqrt(self.meta_adapt_count)
+        eta_A = min(
+            self.eta_A_base / np.sqrt(self.meta_adapt_count),
+            self.eta_A_threshold)
 
         A_grad = np.zeros_like(self.A)
         for X, fhat, y, a, A in self.batch:
@@ -668,6 +681,8 @@ class MetaAdaptDeep(MetaAdapt):
         # Initialize parameters
         self.eta_a_base = eta_a_base
         self.eta_A_base = eta_A_base
+
+        print('Initializing %s with dim_a=%d, layer_sizes=(%d, %d)' % (self._name, self.dim_a, self.layer_sizes[0], self.layer_sizes[1]))
 
     def reset_controller(self):
         super().reset_controller()
@@ -725,7 +740,6 @@ class Omniscient(Baseline):
     _name = 'omniscient'
     name_long = 'Omniscient'
     def __init__(self, *args, **kwargs):
-        # print(args, kwargs)
         super().__init__(integral_control=False, *args, **kwargs)
         self.f_hat_m1 = np.zeros(3)
         self.f_hat_dot_filtered = np.zeros(3)

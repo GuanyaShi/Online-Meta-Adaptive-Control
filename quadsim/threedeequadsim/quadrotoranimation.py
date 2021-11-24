@@ -9,6 +9,14 @@ import rowan
 from .utils import readparamfile
 
 
+__author__ = "Michael O'Connell"
+__date__ = "Octoboer 2021"
+__copyright__ = "Copyright 2021 by Michael O'Connell"
+__maintainer__ = "Michael O'Connell"
+__email__ = "moc@caltech.edu"
+__status__ = "Prototype"
+
+
 DEFAULT_QUAD_PARAMETER_FILE = pkg_resources.resource_filename(__name__, 'params/quadrotor.json')
 
 class QuadrotorAnimation():
@@ -64,7 +72,6 @@ class QuadrotorAnimation():
                 ax1 = np.cross(normal, (0., 0., 1.))
             ax1 = ax1 / np.linalg.norm(ax1)
             ax2 = np.cross(normal, ax1)
-            print(np.linalg.norm(normal), np.linalg.norm(ax1), np.linalg.norm(ax2))
 
             self.circles[i] = self.Circle(np.array(center), radius, np.array(normal), np.array(ax1), np.array(ax2))
 
@@ -190,7 +197,7 @@ def draw_frames(data, **kwargs):
 
 def animate(data, **kwargs):
     a = QuadrotorAnimation()
-    ps = data.X[:, 0:3]
-    qs = data.X[:, 3:7]
-    dt = data.metadata.quad_params.dt_readout
+    ps = data['X'][:, 0:3]
+    qs = data['X'][:, 3:7]
+    dt = np.mean(data['t'][1:] - data['t'][:-1])
     return a.animate(qs, ps, dt, **kwargs)

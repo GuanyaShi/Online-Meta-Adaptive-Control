@@ -15,8 +15,15 @@ import rowan  # NOTE: this is slow, but easier to use than numpy quaternion tool
 from .trajectory import fig8
 from .utils import readparamfile
 
+
 __author__ = "Michael O'Connell"
 __date__ = "Octoboer 2021"
+__copyright__ = "Copyright 2021 by Michael O'Connell"
+__credits__ = ["Michael O'Connell", "Guanya Shi"]
+__maintainer__ = "Michael O'Connell"
+__email__ = "moc@caltech.edu"
+__status__ = "Prototype"
+
 
 # Data = namedtuple('Data', 'log metadata')
 
@@ -150,8 +157,8 @@ class Quadrotor():
 
     def measurement(self, X, Z, t, Xdot, logentry=None):
         X_meas = X
-        noise = np.random.multivariate_normal(np.zeros(6), self.params['process_noise_covariance'])
-        imu_meas = Xdot[7:] + noise
+        noise = np.random.multivariate_normal(np.zeros(3), self.params['imu_covariance'])
+        imu_meas = Xdot[7:10] + noise
 
         logentry['measurement_noise'] = noise
 
@@ -209,6 +216,7 @@ class Quadrotor():
                 logentry['Z'] = Z
                 logentry['T_r'] = T_sp
                 logentry['q_sp'] = q_sp
+                logentry['w_sp'] = w_sp
                 # logentry['w_d'] = w_d
                 # logentry['alpha_d'] = alpha_d
                 logentry['pd'] = pd
@@ -240,12 +248,6 @@ class Quadrotor():
         # Concatenate entries of the log dictionary into single np.array, with first dimension corresponding to each time step recorded
         log2 = {k: np.array([logentry[k] for logentry in log]) for k in log[0]}
         return log2
-        # metadata = {}
-        # metadata.update(self.metadata)
-        # metadata.quad_params = {}
-        # metadata.quad_params.update(self.params)
-        # metadata.update(trajectory.metadata) # TODO: rewrite trajectories as classes with a metadata attribute
-        # return Data(log2, metadata)
 
 class QuadrotorWithSideForce(Quadrotor):
     def __init__(self, *args, sideforcemodel='force and torque', Vwind=0., Vwind_cov=0., Vwind_gust=0., 

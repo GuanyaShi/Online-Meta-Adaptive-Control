@@ -8,49 +8,21 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 
-from threedeequadsim import quadsim, controller, trajectory, quadrotoranimation, utils
 
-def run(Ctrls, options, master_seed=115):
-    # Logs_ijk
-    # - i: controller
-    # - j: parameter
-    Logs = []
-    for i, c in enumerate(Ctrls):
-        np.random.seed(master_seed)
-        Logs.append([])
-        for j, value in enumerate(options['parameter_values']):
-            # Set up quadrotor object and trajectory object
-            t = trajectory.get_trajectory(options['trajectory'], **options['trajectory_options'])
-            parameter_passer = {options['parameter_name: value']}
-            q = quadsim.QuadrotorWithSideForce(**parameter_passer, **options['q_options'])
-            q.params.t_stop = options['simulation_time']
+__author__ = "Michael O'Connell"
+__date__ = "Octoboer 2021"
+__copyright__ = "Copyright 2021 by Michael O'Connell"
+__maintainer__ = "Michael O'Connell"
+__email__ = "moc@caltech.edu"
+__status__ = "Prototype"
 
-            # set some parameters for the simulation
-            experiment_seed = np.random.randint(low=0, high=2147483648)
 
-            # Run experiment
-            print('Testing %s with ' % c._name, parameter_passer)
-            time.sleep(0.5)
-            data = q.run(trajectory=t, controller=c, seed=experiment_seed)
-            log, metadata = data
-
-            #
-            value_str = str(value).replace('.', 'd').replace(', ', '-')
-            for char in "[]{}()'":
-                value_str = value_str.replace(char, '')
-            log.name = c._name + '_' + options['parameter_name'] + '-' + value_str
-            log.seed = experiment_seed
-
-            Logs[i].append(log)
-    return Logs
-
-def plot_3d(log, options):
-    fig = plt.figure(figsize=(10,5))
+def plot_3d(log, bound=2.5, savename=None, nametag='Quadrotor simulation'):
+    fig = plt.figure(figsize=(6,3))
     fig.add_subplot(121, projection='3d')
-    plt.plot(log['X'][:,0],log['X'][:,1], log.X[:,2])
-    plt.plot(log['pd'][:,0], log['pd'][:,1], log.pd[:,2])
+    plt.plot(log['X'][:,0],log['X'][:,1], log['X'][:,2])
+    plt.plot(log['pd'][:,0], log['pd'][:,1], log['pd'][:,2])
     ax = plt.gca()
-    bound = 2.5
     ax.set_xlim(-bound,bound)
     ax.set_ylim(-bound,bound)
     ax.set_zlim(-bound,bound)
@@ -63,17 +35,13 @@ def plot_3d(log, options):
     plt.axis((-bound,bound,-bound,bound))
     plt.xlabel('x')
     plt.ylabel('z')
-    # tstart = 15.
-    # istart = int(100*tstart)
-    istart = - int(100 * options['T'])
-    rmse = np.sqrt(np.mean(np.sum((log['X'][istart:, 0:3] - log['pd'][istart:])**2,1)))
-    print('rmse = ', rmse)
-    plt.title('rmspe = ' + '%.3fm' % rmse + ', ' + options['nametag_short'])
-    # plt.savefig('tracking-error_' + nametag + '.png')
-    plt.savefig('plots/' + options['nametag'] + '_plot-3D.jpg')
+    rmse = np.sqrt(np.mean(np.sum((log['X'][:, 0:3] - log['pd'][:])**2,1)))
+    plt.title(nametag + '\nrmse = ' + '%.3fm' % rmse)
+    if savename is not None:
+        plt.savefig(savename)
 
-def plot_xyz(log, options):
-    plt.figure(figsize=(15,5))
+def plot_xyz(log, savename=None):
+    plt.figure(figsize=(9,3))
     plt.subplot(1,3,1)
     plt.plot(log['t'], log['X'][:,0])
     plt.plot(log['t'], log['pd'][:,0])
@@ -96,13 +64,48 @@ def plot_xyz(log, options):
     plt.xlabel('t')
     plt.ylabel('z')
 
-    plt.savefig('plots/' + options['nametag'] + '_plot-xyz.jpg')
+    if savename is not None:
+        plt.savefig(savename)
 
 def plot_error(log, options):
     plt.figure()
     # istart = - int(100 * options['T'])
     istart = 0
     plt.plot(log['t'][istart:], np.sum((log['X'][istart:, 0:3] - log['pd'][istart:,:])**2,1))
+
+    
+def plot_fields(data, fields, elements=None, savename=None, axislabels=None):
+    ''' data is a dictionary with keys called fields '''
+    if elements is None:
+        elements = np.arange(data[fields[0]].shape[1])
+    num_elements = len(elements)
+
+    # fig = plt.figure(figsize=(5*num_elements, 10))
+    fig, axs = plt.subplots(1, num_elements, figsize=(3*num_elements, 3))
+    if num_elements == 1:
+        axs = [axs,]
+    for i in range(num_elements):
+        ax = axs[i]
+        # ax.plot(num_elements, 1, i+1)
+        ax.grid()
+        if axislabels is not None:
+            suffix = '_' + axislabels[i]
+        elif num_elements > 1 and num_elements < 4:
+            suffix = '_' + 'xyz'[i]
+        else: 
+            suffix = ''
+        for field in fields:
+            ax.plot(data['t'], data[field][:, elements[i]], label=field + suffix)
+        ax.legend()
+        ax.set_xlabel('t [s]')
+    
+    if savename is not None:
+        plt.savefig(savename)
+    # plt.show()
+    plt.tight_layout()
+
+    return fig, axs
+
 
 def get_error(X, pd, istart = 0, iend=-1, lower_percentile=25, upper_percentile=75):
     istart = int(istart)
