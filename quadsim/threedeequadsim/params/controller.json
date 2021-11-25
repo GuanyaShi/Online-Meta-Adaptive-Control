@@ -1,0 +1,28 @@
+{
+    "Lam_xy": 1.5,
+    "K_xy": 4,
+    "Lam_z": 1.0,
+    "K_z": 3.0,
+    "K_i": [
+        [
+            0.5,
+            0.0,
+            0.0
+        ],
+        [
+            0.0,
+            0.5,
+            0.0
+        ],
+        [
+            0.0,
+            0.0,
+            0.5
+        ]
+    ],
+    "max_zenith_angle": 0.7853981633974483,
+    "max_thrust": 125.0,
+    "thrust_delay": 0.0,
+    "attitude_delay": 0.0,
+    "force_filter_time_const": 0.05
+}
